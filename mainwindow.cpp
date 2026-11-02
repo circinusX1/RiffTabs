@@ -655,12 +655,18 @@ void MainWindow::updatePreprocessedAudioAsync() {
                 QString hopStr = m_hopSizeCombo ? m_hopSizeCombo->currentText() : "1s";
                 hopStr.remove('s');
                 double hopSec = hopStr.toDouble();
-                int fftVal = m_fftSizes[m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 4];
+                int fftVal = m_fftSizes[m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 3];
                 double dur = shifted.isEmpty() ? 0.0 : shifted.size() / static_cast<double>(m_sampleRate);
 
                 m_extractedChords = analyzeAudioChords(shifted, dur, m_sampleRate, hopSec, fftVal);
                 if (m_waveformWidget) {
                     m_waveformWidget->setChords(m_extractedChords);
+                    // Remake the selection if one was saved before the pitch/tempo change
+                    if (m_savedSelectionStart >= 0 && m_savedSelectionEnd > m_savedSelectionStart) {
+                        m_waveformWidget->setSelection(m_savedSelectionStart, m_savedSelectionEnd);
+                        m_savedSelectionStart = -1.0;
+                        m_savedSelectionEnd = -1.0;
+                    }
                 }
             }
 
@@ -780,9 +786,19 @@ void MainWindow::setupUi() {
         m_timelineValueLabel->setStyleSheet("color: #f59e0b; font-family: monospace; font-weight: bold; font-size: 11px;");
         m_timelineValueLabel->setFixedWidth(80);
 
+        m_fixedViewCheck = new QCheckBox("FIXED", this);
+        m_fixedViewCheck->setStyleSheet(
+            "QCheckBox { color: #f59e0b; font-family: monospace; font-weight: bold; font-size: 11px; }"
+            "QCheckBox::indicator { width: 14px; height: 14px; }"
+            "QCheckBox::indicator:checked { background-color: #f59e0b; border: 1px solid #d97706; }"
+        );
+        m_fixedViewCheck->setChecked(false);
+        m_fixedViewCheck->setToolTip("When checked, stop auto-scrolling the waveform during playback");
+
         sliderLayout->addWidget(sliderTitle);
         sliderLayout->addWidget(m_timelineSlider);
         sliderLayout->addWidget(m_timelineValueLabel);
+        sliderLayout->addWidget(m_fixedViewCheck);
 
         waveLayout->addLayout(sliderLayout);
         mainLayout->addWidget(waveformGroup);
@@ -813,6 +829,11 @@ void MainWindow::setupUi() {
 
         connect(m_waveformWidget, &GLWaveformWidget::selectionChanged, this, &MainWindow::handleSelectionChanged);
         connect(m_timelineSlider, &QSlider::valueChanged, this, &MainWindow::onTimelineSliderChanged);
+        connect(m_fixedViewCheck, &QCheckBox::toggled, this, [this](bool checked) {
+            if (m_waveformWidget) {
+                m_waveformWidget->setAutoScrollEnabled(!checked);
+            }
+        });
 
         QHBoxLayout *controlsLayout = new QHBoxLayout();
 
@@ -837,6 +858,16 @@ void MainWindow::setupUi() {
             speedBtnLayout->addWidget(m_speedButtons[i]);
 
             connect(m_speedButtons[i], &QPushButton::clicked, this, [this, i, speedValues]() {
+                // Save selection if present, then clear it
+                bool hadSelection = (m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec);
+                if (hadSelection) {
+                    m_savedSelectionStart = m_loopStartSec;
+                    m_savedSelectionEnd = m_loopEndSec;
+                } else {
+                    m_savedSelectionStart = -1.0;
+                    m_savedSelectionEnd = -1.0;
+                }
+
                 for (int j = 0; j < 7; ++j)
                     m_speedButtons[j]->setChecked(j == i);
                 m_currentSpeed = speedValues[i];
@@ -903,6 +934,16 @@ void MainWindow::setupUi() {
             pitchBtnLayout->addWidget(m_pitchButtons[i]);
 
             connect(m_pitchButtons[i], &QPushButton::clicked, this, [this, i, pitchValues]() {
+                // Save selection if present, then clear it
+                bool hadSelection = (m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec);
+                if (hadSelection) {
+                    m_savedSelectionStart = m_loopStartSec;
+                    m_savedSelectionEnd = m_loopEndSec;
+                } else {
+                    m_savedSelectionStart = -1.0;
+                    m_savedSelectionEnd = -1.0;
+                }
+
                 for (int j = 0; j < 9; ++j)
                     m_pitchButtons[j]->setChecked(j == i);
                 m_currentPitch = pitchValues[i];
@@ -939,9 +980,10 @@ void MainWindow::setupUi() {
         const QString filterLabels[] = {"31", "62", "125", "250", "500", "1K", "2K", "4K", "8K"};
 
         // Pitch button style reference for consistent sizing
+        // Checked (toggled down / cut) buttons shrink to ~1/3 height
         QString filterBtnStyle =
-            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 11px; min-width: 32px; min-height: 32px; }"
-            "QPushButton:checked { background-color: #ef4444; color: #09090b; border-color: #dc2626; }"
+            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 11px; min-width: 32px; min-height: 32px; max-height: 32px; }"
+            "QPushButton:checked { background-color: #ef4444; color: #09090b; border-color: #dc2626; min-height: 11px; max-height: 11px; font-size: 9px; padding: 0px; }"
             "QPushButton:disabled { background-color: #27272a; color: #52525b; border-color: #3f3f46; }";
 
         for (int i = 0; i < 9; ++i) {
@@ -953,6 +995,7 @@ void MainWindow::setupUi() {
             m_filterButtons[i]->setCheckable(true);
             m_filterButtons[i]->setChecked(false); // Default state: UN-toggled (no filter applied)
             m_filterButtons[i]->setEnabled(false);
+            m_filterButtons[i]->setFixedHeight(32); // start at full height
             m_filterButtons[i]->setStyleSheet(filterBtnStyle);
 
             colLayout->addWidget(m_filterButtons[i], 0, Qt::AlignCenter);
@@ -960,6 +1003,12 @@ void MainWindow::setupUi() {
 
             connect(m_filterButtons[i], &QPushButton::toggled, [this, i](bool checked) {
                 m_filterStates[i] = checked; // true = Down (-60 dB cut), false = Up (0 dB / un-toggled)
+                // Shrink to 1/3 height only when checked
+                if (checked) {
+                    m_filterButtons[i]->setFixedHeight(11);
+                } else {
+                    m_filterButtons[i]->setFixedHeight(32);
+                }
                 updateAudioEffects();
             });
         }
@@ -1143,6 +1192,16 @@ void MainWindow::setupUi() {
                 }
             }
         };
+
+        // Keep step size and FFT size the same
+        connect(m_hopSizeCombo, &QComboBox::currentIndexChanged, [this](int idx) {
+            if (m_fftSizeCombo && m_fftSizeCombo->currentIndex() != idx)
+                m_fftSizeCombo->setCurrentIndex(idx);
+        });
+        connect(m_fftSizeCombo, &QComboBox::currentIndexChanged, [this](int idx) {
+            if (m_hopSizeCombo && m_hopSizeCombo->currentIndex() != idx)
+                m_hopSizeCombo->setCurrentIndex(idx);
+        });
 
         connect(m_hopSizeCombo, &QComboBox::currentIndexChanged, reanalyzeChords);
         connect(m_fftSizeCombo, &QComboBox::currentIndexChanged, reanalyzeChords);
@@ -1462,7 +1521,7 @@ void MainWindow::handleDecoderFinished() {
     QString hopStr = m_hopSizeCombo ? m_hopSizeCombo->currentText() : "1s";
     hopStr.remove('s');
     double hopSec = hopStr.toDouble();
-    int fftVal = m_fftSizes[m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 4];
+    int fftVal = m_fftSizes[m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 3];
 
     if (m_statusBar) m_statusBar->showMessage("Extracting chords, please wait...");
     m_extractedChords = analyzeAudioChords(m_decodedSamples, totalDurationSec, m_sampleRate, hopSec, fftVal);
@@ -1620,7 +1679,7 @@ void MainWindow::showAboutDialog() {
     QLabel *titleLabel = new QLabel("<b>RiffTabs</b>", &aboutDialog);
     titleLabel->setStyleSheet("font-size: 18px; color: #f59e0b;");
 
-    QLabel *verLabel = new QLabel("Version 1.0.0", &aboutDialog);
+    QLabel *verLabel = new QLabel(QString("Version ") + APP_VERSION, &aboutDialog);
     verLabel->setStyleSheet("font-size: 12px; color: #a1a1aa; font-family: monospace;");
 
     QLabel *copyLabel = new QLabel("Copyright © 2026<br><b>Ghitara.com & AIurea-Music</b>", &aboutDialog);
@@ -1680,8 +1739,8 @@ void MainWindow::loadSettings() {
         if (m_fretboardWidget) m_fretboardWidget->setFingeringMode(power);
     }
 
-    int hopIdx = settings.value("chords/hopSizeIndex", 1).toInt();
-    int fftIdx = settings.value("chords/fftSizeIndex", 4).toInt();
+    int hopIdx = settings.value("chords/hopSizeIndex", 3).toInt();
+    int fftIdx = settings.value("chords/fftSizeIndex", 3).toInt();
     if (m_hopSizeCombo && hopIdx >= 0 && hopIdx < m_hopSizeCombo->count())
         m_hopSizeCombo->setCurrentIndex(hopIdx);
     if (m_fftSizeCombo && fftIdx >= 0 && fftIdx < m_fftSizeCombo->count())

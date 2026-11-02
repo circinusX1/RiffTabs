@@ -7,6 +7,11 @@ greaterThan(QT_MAJOR_VERSION, 5) {
     QT += opengl
 }
 
+VERSION = 1.0.0.1
+
+# Pass it to your C++ code as a macro
+DEFINES += APP_VERSION=\\\"$$VERSION\\\"
+
 CONFIG += c++17
 
 TARGET = RiffTabs

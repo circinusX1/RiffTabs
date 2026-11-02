@@ -73,7 +73,7 @@ double GLWaveformWidget::snapToTempoTick(double rawSeconds) const {
 void GLWaveformWidget::setPlaybackPosition(double seconds) {
     m_currentPosition = seconds;
 
-    if (m_duration > 0) {
+    if (m_duration > 0 && m_autoScrollEnabled) {
         int visibleWidth = width();
         int totalWidth = getTotalWidth();
         int maxScroll = getMaxScrollOffset();
@@ -119,6 +119,22 @@ void GLWaveformWidget::clearSelection() {
     m_isSelecting = false;
     emit selectionChanged(-1.0, -1.0);
     update();
+}
+
+void GLWaveformWidget::setSelection(double startSec, double endSec) {
+    if (endSec > startSec + 0.01) {
+        m_selectStartSec = startSec;
+        m_selectEndSec = endSec;
+        m_isSelecting = false;
+        emit selectionChanged(m_selectStartSec, m_selectEndSec);
+    } else {
+        clearSelection();
+    }
+    update();
+}
+
+void GLWaveformWidget::setAutoScrollEnabled(bool enabled) {
+    m_autoScrollEnabled = enabled;
 }
 
 void GLWaveformWidget::setChords(const QVector<ChordMarker> &chords) {

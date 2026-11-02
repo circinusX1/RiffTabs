@@ -25,6 +25,8 @@ public:
     void setVisibleFraction(float fraction);
     void setScrollOffset(int offset);
     void clearSelection();
+    void setSelection(double startSec, double endSec);
+    void setAutoScrollEnabled(bool enabled);
 
     int getTotalWidth() const;
     int getMaxScrollOffset() const;
@@ -58,6 +60,7 @@ private:
 
     float m_visibleFraction = 0.1f; // X Time Zoom Factor (0.1 = 10% visible)
     int m_scrollOffset = 0;
+    bool m_autoScrollEnabled = true;
 
     // Selection Tracking
     bool m_isSelecting = false;

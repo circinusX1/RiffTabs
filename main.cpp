@@ -39,6 +39,7 @@ static void setupVampPluginPath()
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
+    app.setApplicationVersion(APP_VERSION);
     // Set VAMP_PATH so Chordino / nnls-chroma plugins are found next to the binary
     setupVampPluginPath();
 

@@ -21,6 +21,7 @@
 #include <QResizeEvent>
 #include <QFile>
 #include <QTemporaryFile>
+#include <QCheckBox>
 #include <soundtouch/SoundTouch.h>
 #include "glwaveformwidget.h"
 #include "fretboardwidget.h"
@@ -104,6 +105,7 @@ private:
     float m_currentPitch = 0.0f;
     KnobWidget *m_volumeKnob = nullptr;
     QSlider *m_timelineSlider = nullptr;
+    QCheckBox *m_fixedViewCheck = nullptr;
 
     QGroupBox *m_tempoGroup = nullptr;
     QGroupBox *m_chordExtractionGroup = nullptr;
@@ -138,6 +140,8 @@ private:
 
     double m_loopStartSec = -1.0;
     double m_loopEndSec = -1.0;
+    double m_savedSelectionStart = -1.0;
+    double m_savedSelectionEnd = -1.0;
     double m_currentPositionSec = 0.0;
     bool m_isPaused = false;
     bool m_processing = false;
