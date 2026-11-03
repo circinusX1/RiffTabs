@@ -25,6 +25,7 @@
 #include <soundtouch/SoundTouch.h>
 #include "glwaveformwidget.h"
 #include "fretboardwidget.h"
+#include "tabwidget.h" // OpenGL Tab control header
 #include "knobwidget.h"
 
 class MainWindow : public QMainWindow {
@@ -34,9 +35,13 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow() = default;
 
+
+    QVector<QString> getActiveShape(const QString &chord);
+    static MainWindow* Pmain;
 protected:
     void closeEvent(QCloseEvent *event) override;
     void resizeEvent(QResizeEvent *event) override;
+    void showEvent(QShowEvent *event) override; // Add this line
 
 private slots:
     void openAudioFile();
@@ -53,6 +58,8 @@ private slots:
     void showAboutDialog();
 
 private:
+    void updateTabWindow();
+    void updateInfoLabel();
     void setupMenuBar();
     void setupUi();
     void loadAudioFile(const QString &filePath);
@@ -85,6 +92,7 @@ private:
 
     GLWaveformWidget *m_waveformWidget = nullptr;
     FretboardWidget *m_fretboardWidget = nullptr;
+    TabWidget *m_tabWidget = nullptr; // OpenGL Tab control
     QScrollBar *m_waveformScrollBar = nullptr;
 
     QPushButton *m_playPauseBtn = nullptr;
@@ -115,13 +123,13 @@ private:
     QGroupBox *m_fingeringGroup = nullptr;
     QPushButton *m_fingeringToggleBtn = nullptr;
     QLabel *m_fingeringLabel = nullptr;
+    QPushButton *m_tabsToggleBtn = nullptr;
 
-    // Filters Group & Sliders
     // Filters Group & Toggle Buttons
     QGroupBox *m_filtersGroup = nullptr;
     QPushButton *m_filterButtons[9] = {nullptr};
     bool m_filtersEnabled = false;
-    bool m_filterStates[9] = {false}; // false = Up (0 dB), true = Down (-60 dB)
+    bool m_filterStates[9] = {false};
 
     QMenu *m_recentFilesMenu = nullptr;
     static const int MaxRecentFiles = 5;
@@ -148,10 +156,7 @@ private:
     bool m_resumeAfterProcess = false;
     bool m_reanalyzeChordsAfterProcess = false;
     qint64 m_playbackStartTimeMs = 0;
-    qint64 m_lastInfoUpdateMs = 0;   // throttle info-line time updates
-
-
-
+    qint64 m_lastInfoUpdateMs = 0;
 };
 
 #endif // MAINWINDOW_H

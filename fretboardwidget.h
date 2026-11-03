@@ -13,7 +13,7 @@ public:
     void setViewMode(bool isTab);       // true = Tabs, false = Fretboard
     void setFingeringMode(bool isPower);
     void setAccentColor(const QColor &color);// true = Power, false = Standard
-
+    QVector<QString> getActiveShape(const QString &chord);
 protected:
     void paintEvent(QPaintEvent *event) override;
 
@@ -31,6 +31,6 @@ private:
     QMap<QString, Shape> m_shapes;
 
     void initShapes();
-    QVector<QString> getActiveShape(const QString &chord);
+
     void drawFretboard(QPainter &painter, const QRect &bounds, const QString &chordName, bool isMini);
 };

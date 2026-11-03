@@ -88,21 +88,20 @@ void GLWaveformWidget::setPlaybackPosition(double seconds) {
 
             if (newOffset != m_scrollOffset) {
                 m_scrollOffset = newOffset;
-                QSignalBlocker blocker(this);
-                emit scrollOffsetChanged(m_scrollOffset);
+                emit scrollOffsetChanged(m_scrollOffset); // Signal now fires properly
             }
         } else if (playheadX < m_scrollOffset) {
             int newOffset = std::max(0, playheadX - (visibleWidth / 3));
             if (newOffset != m_scrollOffset) {
                 m_scrollOffset = newOffset;
-                QSignalBlocker blocker(this);
-                emit scrollOffsetChanged(m_scrollOffset);
+                emit scrollOffsetChanged(m_scrollOffset); // Signal now fires properly
             }
         }
     }
 
     update();
 }
+
 
 void GLWaveformWidget::setAccentColor(const QColor &color) {
     m_accentColor = color;

@@ -7,7 +7,7 @@ greaterThan(QT_MAJOR_VERSION, 5) {
     QT += opengl
 }
 
-VERSION = 1.0.0.1
+VERSION = 1.0.1
 
 # Pass it to your C++ code as a macro
 DEFINES += APP_VERSION=\\\"$$VERSION\\\"
@@ -21,13 +21,15 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     fretboardwidget.cpp \
-    glwaveformwidget.cpp
+    glwaveformwidget.cpp \
+    tabwidget.cpp
 
 HEADERS += \
     glwaveformwidget.h \
     mainwindow.h \
     fretboardwidget.h \
-    knobwidget.h
+    knobwidget.h \
+    tabwidget.h
 
 #
 # sudo apt update

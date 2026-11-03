@@ -31,6 +31,8 @@ public:
     int getTotalWidth() const;
     int getMaxScrollOffset() const;
     double getDuration() const { return m_duration; }
+    int getScrollOffset() const { return m_scrollOffset; }
+    float getVisibleFraction() const { return m_visibleFraction; }
 
 signals:
     void seekRequested(double timeSeconds);

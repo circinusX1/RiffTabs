@@ -33,6 +33,8 @@
 
 using namespace Vamp::HostExt;
 
+MainWindow* MainWindow::Pmain = nullptr;
+
 // ========================================================
 // RADIX-2 FFT IMPLEMENTATION
 // ========================================================
@@ -54,7 +56,7 @@ static void fftProcess(std::valarray<std::complex<double>>& x) {
 }
 
 // ========================================================
-// VAMP HOST SDK CHORD EXTRACTION (CHORDINO / NNLS CHROMA)
+// VAMP HOST SDK CHORD EXTRACTION
 // ========================================================
 QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &samples,
                                                     double duration,
@@ -79,7 +81,7 @@ QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &sample
     }
 
     if (!plugin) {
-        const QString errMsg = "ERROR: Could not load Vamp Chordino plugin! Ensure vamp-plugin-sdk and chordino plugin binaries are installed.";
+        const QString errMsg = "ERROR: Could not load Vamp Chordino plugin!";
         qDebug() << errMsg;
 
         applyTheme(false, true);
@@ -95,12 +97,6 @@ QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &sample
     size_t preferredStep = hopSizeSec;
     size_t preferredBlock = fftSize;
 
-    if(fftSize != hopSizeSec) {
-        if (m_statusBar) {
-            m_statusBar->showMessage("ERR FFT and HOP should be the same for vamp plugins");
-        }
-    }
-
     int stepSize = preferredStep > 0 ? static_cast<int>(preferredStep)
                                      : static_cast<int>(hopSizeSec * sampleRate);
     int blockSize = preferredBlock > 0 ? static_cast<int>(preferredBlock)
@@ -111,7 +107,6 @@ QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &sample
     if (stepSize > blockSize) stepSize = blockSize / 2;
 
     if (!plugin->initialise(1, stepSize, blockSize)) {
-        qDebug() << "ERROR: Failed to initialize Vamp Chordino plugin!";
         delete plugin;
         return markers;
     }
@@ -217,7 +212,6 @@ void MainWindow::applyGraphicEQ(QVector<float> &samples, int sampleRate) {
 
     const double frequencies[9] = {31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0};
 
-    // Check if any filter button is toggled down
     bool active = false;
     for (int i = 0; i < 9; ++i) {
         if (m_filterStates[i]) {
@@ -225,7 +219,7 @@ void MainWindow::applyGraphicEQ(QVector<float> &samples, int sampleRate) {
             break;
         }
     }
-    if (!active) return; // If all are un-toggled, bypass filtering entirely
+    if (!active) return;
 
     struct BiquadState {
         double b0, b1, b2, a1, a2;
@@ -234,9 +228,7 @@ void MainWindow::applyGraphicEQ(QVector<float> &samples, int sampleRate) {
 
     std::vector<BiquadState> filters(9);
     for (int i = 0; i < 9; ++i) {
-        // Toggled down = -60 dB (cut/suppress), Un-toggled = 0.0 dB (no change)
         double gainDb = m_filterStates[i] ? -60.0 : 0.0;
-
         double A = std::pow(10.0, gainDb / 40.0);
         double w0 = 2.0 * M_PI * frequencies[i] / sampleRate;
         double alpha = std::sin(w0) / 2.0;
@@ -254,7 +246,7 @@ void MainWindow::applyGraphicEQ(QVector<float> &samples, int sampleRate) {
     for (int s = 0; s < samples.size(); ++s) {
         double val = samples[s];
         for (int i = 0; i < 9; ++i) {
-            if (!m_filterStates[i]) continue; // Skip bands that are un-toggled
+            if (!m_filterStates[i]) continue;
             auto &f = filters[i];
             double out = f.b0 * val + f.b1 * f.x1 + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2;
             f.x2 = f.x1;
@@ -359,10 +351,7 @@ bool MainWindow::writePcmToTempWav(const QByteArray &pcm, int sampleRate, int ch
 
     QTemporaryFile temp(QDir::tempPath() + "/webriff_XXXXXX.wav");
     temp.setAutoRemove(false);
-    if (!temp.open()) {
-        qWarning() << "Failed to create temp WAV";
-        return false;
-    }
+    if (!temp.open()) return false;
     m_tempWavPath = temp.fileName();
     temp.close();
 
@@ -463,9 +452,7 @@ void MainWindow::applyTheme(bool cyan, bool errorRed) {
 
     if (m_themeToggleBtn) {
         if (errorRed) {
-            m_themeToggleBtn->setStyleSheet(
-                "QPushButton { background-color: #ef4444; color: #09090b; border: none; border-radius: 4px; font-weight: bold; font-size: 10px; }"
-            );
+            m_themeToggleBtn->setStyleSheet("QPushButton { background-color: #ef4444; color: #09090b; border: none; border-radius: 4px; font-weight: bold; font-size: 10px; }");
             m_themeToggleBtn->setText("ERROR");
         } else {
             m_themeToggleBtn->setStyleSheet(
@@ -499,9 +486,7 @@ void MainWindow::updatePreprocessedAudioAsync() {
 
     m_processing = true;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    if (m_playPauseBtn) {
-        m_playPauseBtn->setEnabled(false);
-    }
+    if (m_playPauseBtn) m_playPauseBtn->setEnabled(false);
     for (int i = 0; i < 7; ++i) if (m_speedButtons[i]) m_speedButtons[i]->setEnabled(false);
     for (int i = 0; i < 9; ++i) if (m_pitchButtons[i]) m_pitchButtons[i]->setEnabled(false);
 
@@ -564,7 +549,6 @@ void MainWindow::updatePreprocessedAudioAsync() {
         }
 
         QByteArray pcmData;
-
         if (qFuzzyCompare(tempo, 1.0f) && qFuzzyIsNull(pitchSt) && !filtersEnabled) {
             pcmData.resize(samplesCopy.size() * sizeof(qint16));
             qint16 *outPtr = reinterpret_cast<qint16*>(pcmData.data());
@@ -633,13 +617,9 @@ void MainWindow::updatePreprocessedAudioAsync() {
             m_preprocessedPcmData = pcmData;
             m_processing = false;
             QApplication::restoreOverrideCursor();
-            if (m_processBar) {
-                m_processBar->setVisible(false);
-            }
+            if (m_processBar) m_processBar->setVisible(false);
 
-            if (m_waveformWidget) {
-                m_waveformWidget->setPitchShift(m_currentPitch);
-            }
+            if (m_waveformWidget) m_waveformWidget->setPitchShift(m_currentPitch);
 
             if (m_reanalyzeChordsAfterProcess) {
                 m_reanalyzeChordsAfterProcess = false;
@@ -661,7 +641,6 @@ void MainWindow::updatePreprocessedAudioAsync() {
                 m_extractedChords = analyzeAudioChords(shifted, dur, m_sampleRate, hopSec, fftVal);
                 if (m_waveformWidget) {
                     m_waveformWidget->setChords(m_extractedChords);
-                    // Remake the selection if one was saved before the pitch/tempo change
                     if (m_savedSelectionStart >= 0 && m_savedSelectionEnd > m_savedSelectionStart) {
                         m_waveformWidget->setSelection(m_savedSelectionStart, m_savedSelectionEnd);
                         m_savedSelectionStart = -1.0;
@@ -670,9 +649,7 @@ void MainWindow::updatePreprocessedAudioAsync() {
                 }
             }
 
-            if (m_playPauseBtn) {
-                m_playPauseBtn->setEnabled(true);
-            }
+            if (m_playPauseBtn) m_playPauseBtn->setEnabled(true);
             for (int i = 0; i < 7; ++i) if (m_speedButtons[i]) m_speedButtons[i]->setEnabled(true);
             for (int i = 0; i < 9; ++i) if (m_pitchButtons[i]) m_pitchButtons[i]->setEnabled(true);
 
@@ -688,7 +665,6 @@ void MainWindow::updatePreprocessedAudioAsync() {
     thread->start();
 }
 
-
 // ========================================================
 // MAIN WINDOW IMPLEMENTATION
 // ========================================================
@@ -699,6 +675,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
 
     setupMenuBar();
     setupUi();
+    MainWindow::Pmain = this;
     setWindowIcon(createAppIcon());
 
     m_playbackTimer = new QTimer(this);
@@ -710,6 +687,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     });
     loadSettings();
     loadLastOpenedFile();
+
 }
 
 void MainWindow::setupMenuBar() {
@@ -741,8 +719,9 @@ void MainWindow::setupMenuBar() {
     QAction *aboutAction = aboutMenu->addAction("&About RiffTabs");
     connect(aboutAction, &QAction::triggered, this, &MainWindow::showAboutDialog);
 }
+//////////////////////////////////////////////////////////////////////////////////////////////
 
-void MainWindow::setupUi() {
+    void MainWindow::setupUi() {
         QWidget *centralWidget = new QWidget(this);
         QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
         mainLayout->setSpacing(8);
@@ -768,7 +747,7 @@ void MainWindow::setupUi() {
         waveLayout->addWidget(m_waveformScrollBar);
 
         QHBoxLayout *sliderLayout = new QHBoxLayout();
-        QLabel *sliderTitle = new QLabel("View Fraction:", this);
+        QLabel *sliderTitle = new QLabel("ZOOM:", this);
         sliderTitle->setStyleSheet("color: #a1a1aa; font-weight: bold; font-size: 11px;");
 
         m_timelineSlider = new QSlider(Qt::Horizontal, this);
@@ -835,6 +814,48 @@ void MainWindow::setupUi() {
             }
         });
 
+        // ==========================================
+        // TABS GROUP (HIDE button aligned to the left)
+        // ==========================================
+        QGroupBox *tabsGroup = new QGroupBox(this);
+        tabsGroup->setStyleSheet(
+            "QGroupBox { border: 1.5px solid #3f3f46; border-radius: 6px; margin-top: 6px; font-weight: bold; font-size: 10px; color: #a1a1aa; }"
+        );
+        QVBoxLayout *tabsGroupLayout = new QVBoxLayout(tabsGroup);
+        tabsGroupLayout->setContentsMargins(6, 6, 6, 6);
+
+        QHBoxLayout *tabsHeaderLayout = new QHBoxLayout();
+
+        // Initialize and add the HIDE/SHOW button first (left side)
+        m_tabsToggleBtn = new QPushButton("HIDE", tabsGroup);
+        m_tabsToggleBtn->setCheckable(true);
+        m_tabsToggleBtn->setChecked(false);
+        m_tabsToggleBtn->setFixedSize(50, 18);
+        m_tabsToggleBtn->setStyleSheet(
+            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 3px; font-weight: bold; font-size: 9px; }"
+            "QPushButton:checked { background-color: #3f3f46; color: #a1a1aa; }"
+        );
+        tabsHeaderLayout->addWidget(m_tabsToggleBtn);
+
+        // Add stretch to push everything else to the right, keeping the button left-aligned
+        tabsHeaderLayout->addStretch();
+
+        tabsGroupLayout->addLayout(tabsHeaderLayout);
+
+        m_tabWidget = new TabWidget(this);
+        tabsGroupLayout->addWidget(m_tabWidget);
+
+        mainLayout->addWidget(tabsGroup);
+
+        connect(m_tabsToggleBtn, &QPushButton::toggled, [this](bool checked) {
+            m_tabsToggleBtn->setText(checked ? "SHOW" : "HIDE");
+            if (m_tabWidget) {
+                m_tabWidget->setVisible(!checked);
+            }
+        });
+        // ==========================================
+        // TOP CONTROLS LAYOUT (TEMPO, FRETBOARD, PITCH/FILTERS)
+        // ==========================================
         QHBoxLayout *controlsLayout = new QHBoxLayout();
 
         m_tempoGroup = new QGroupBox("TEMPO --", this);
@@ -846,7 +867,7 @@ void MainWindow::setupUi() {
         const float speedValues[] = {0.2f, 0.4f, 0.6f, 0.8f, 1.0f, 1.2f, 1.4f};
 
         QString btnStyle =
-            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 12px; min-width: 42px; min-height: 32px; }"
+            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 12px; min-width: 34px; min-height: 32px; }"
             "QPushButton:checked { background-color: #d97706; color: #09090b; }"
             "QPushButton:disabled { background-color: #27272a; color: #52525b; border-color: #3f3f46; }";
 
@@ -858,47 +879,26 @@ void MainWindow::setupUi() {
             speedBtnLayout->addWidget(m_speedButtons[i]);
 
             connect(m_speedButtons[i], &QPushButton::clicked, this, [this, i, speedValues]() {
-                // Save selection if present, then clear it
-                bool hadSelection = (m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec);
-                if (hadSelection) {
-                    m_savedSelectionStart = m_loopStartSec;
-                    m_savedSelectionEnd = m_loopEndSec;
-                } else {
-                    m_savedSelectionStart = -1.0;
-                    m_savedSelectionEnd = -1.0;
-                }
+                        bool hadSelection = (m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec);
+                        if (hadSelection) {
+                            m_savedSelectionStart = m_loopStartSec;
+                            m_savedSelectionEnd = m_loopEndSec;
+                        } else {
+                            m_savedSelectionStart = -1.0;
+                            m_savedSelectionEnd = -1.0;
+                        }
 
-                for (int j = 0; j < 7; ++j)
-                    m_speedButtons[j]->setChecked(j == i);
-                m_currentSpeed = speedValues[i];
-                m_speedValueLabel->setText(QString("Speed: %1x").arg(speedValues[i], 0, 'f', 1));
-                if (m_waveformWidget) m_waveformWidget->clearSelection();
-                m_reanalyzeChordsAfterProcess = true;
-                // Refresh info line immediately with new playing rate
-                if (m_infoLabel && !m_currentFileName.isEmpty()) {
-                    double totalSec = m_decodedSamples.isEmpty() ? 0.0 : (m_decodedSamples.size() / static_cast<double>(m_sampleRate));
-                    int totM = static_cast<int>(totalSec) / 60;
-                    int totS = static_cast<int>(totalSec) % 60;
-                    int curM = static_cast<int>(m_currentPositionSec) / 60;
-                    int curS = static_cast<int>(m_currentPositionSec) % 60;
-                    int curMs = static_cast<int>(m_currentPositionSec * 1000) % 1000;
-                    int totMs = static_cast<int>(totalSec * 1000) % 1000;
-                    QString chInfo = (m_channels == 1) ? "Mono" : (m_channels == 2) ? "Stereo" : QString("%1 ch").arg(m_channels);
-                    m_infoLabel->setText(QString("%1  |  %2  |  %3 Hz  |  %4x  |  %5  |  %6:%7:%8  |  %9:%10:%11")
-                                         .arg(m_currentFileName)
-                                         .arg(m_formatInfo)
-                                         .arg(m_sampleRate)
-                                         .arg(m_currentSpeed, 0, 'f', 1)
-                                         .arg(chInfo)
-                                         .arg(totM, 2, 10, QChar('0'))
-                                         .arg(totS, 2, 10, QChar('0'))
-                                         .arg(totMs, 3, 10, QChar('0'))
-                                         .arg(curM, 2, 10, QChar('0'))
-                                         .arg(curS, 2, 10, QChar('0'))
-                                         .arg(curMs, 3, 10, QChar('0')));
-                }
-                updateAudioEffects();
-            });
+                        for (int j = 0; j < 7; ++j)
+                            m_speedButtons[j]->setChecked(j == i);
+                        m_currentSpeed = speedValues[i];
+                        m_speedValueLabel->setText(QString("Speed: %1x").arg(speedValues[i], 0, 'f', 1));
+
+                        updateInfoLabel(); // Immediately update info bar when speed changes
+
+                        if (m_waveformWidget) m_waveformWidget->clearSelection();
+                        m_reanalyzeChordsAfterProcess = true;
+                        updateAudioEffects();
+                    });
         }
 
         m_speedValueLabel = new QLabel("Speed: 1.0x", this);
@@ -912,17 +912,17 @@ void MainWindow::setupUi() {
 
         m_fretboardWidget = new FretboardWidget(this);
 
-        // PITCH Group (reduced height share)
+        // PITCH Group
         QGroupBox *pitchGroup = new QGroupBox("PITCH", this);
         QVBoxLayout *pitchLayout = new QVBoxLayout(pitchGroup);
 
         QHBoxLayout *pitchBtnLayout = new QHBoxLayout();
-        pitchBtnLayout->setSpacing(4);
+        pitchBtnLayout->setSpacing(3);
         const QString pitchLabels[] = {"-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4"};
         const float pitchValues[] = {-4.0f, -3.0f, -2.0f, -1.0f, 0.0f, 1.0f, 2.0f, 3.0f, 4.0f};
 
         QString pitchBtnStyle =
-            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 12px; min-width: 42px; min-height: 28px; }"
+            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 11px; min-width: 32px; min-height: 28px; }"
             "QPushButton:checked { background-color: #d97706; color: #09090b; }"
             "QPushButton:disabled { background-color: #27272a; color: #52525b; border-color: #3f3f46; }";
 
@@ -934,7 +934,6 @@ void MainWindow::setupUi() {
             pitchBtnLayout->addWidget(m_pitchButtons[i]);
 
             connect(m_pitchButtons[i], &QPushButton::clicked, this, [this, i, pitchValues]() {
-                // Save selection if present, then clear it
                 bool hadSelection = (m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec);
                 if (hadSelection) {
                     m_savedSelectionStart = m_loopStartSec;
@@ -963,8 +962,7 @@ void MainWindow::setupUi() {
         pitchLayout->addLayout(pitchBtnLayout);
         pitchLayout->addWidget(m_pitchValueLabel);
 
-        // FILTERS Group with Checkbox and 9 Toggle Buttons side-by-side
-        // FILTERS Group with Checkbox and 9 Toggle Buttons side-by-side
+        // FILTERS Group
         m_filtersGroup = new QGroupBox("FILTERS", this);
         m_filtersGroup->setCheckable(true);
         m_filtersGroup->setChecked(false);
@@ -974,40 +972,35 @@ void MainWindow::setupUi() {
         );
 
         QHBoxLayout *filtersLayout = new QHBoxLayout(m_filtersGroup);
-        filtersLayout->setSpacing(4);
-        filtersLayout->setContentsMargins(6, 12, 6, 4);
+        filtersLayout->setSpacing(3);
+        filtersLayout->setContentsMargins(4, 12, 4, 4);
 
         const QString filterLabels[] = {"31", "62", "125", "250", "500", "1K", "2K", "4K", "8K"};
-
-        // Pitch button style reference for consistent sizing
-        // Checked (toggled down / cut) buttons shrink to ~1/3 height
         QString filterBtnStyle =
-            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 11px; min-width: 32px; min-height: 32px; max-height: 32px; }"
-            "QPushButton:checked { background-color: #ef4444; color: #09090b; border-color: #dc2626; min-height: 11px; max-height: 11px; font-size: 9px; padding: 0px; }"
+            "QPushButton { background-color: #18181b; color: #f59e0b; border: 1px solid #3f3f46; border-radius: 4px; font-weight: bold; font-size: 11px; min-width: 32px; min-height: 48px; max-height: 48px; }"
+            "QPushButton:checked { background-color: #ef4444; color: #09090b; border-color: #dc2626; }"
             "QPushButton:disabled { background-color: #27272a; color: #52525b; border-color: #3f3f46; }";
 
         for (int i = 0; i < 9; ++i) {
             QVBoxLayout *colLayout = new QVBoxLayout();
-            colLayout->setSpacing(4);
+            colLayout->setSpacing(2);
             colLayout->setContentsMargins(0, 0, 0, 0);
 
             m_filterButtons[i] = new QPushButton(filterLabels[i], this);
             m_filterButtons[i]->setCheckable(true);
-            m_filterButtons[i]->setChecked(false); // Default state: UN-toggled (no filter applied)
+            m_filterButtons[i]->setChecked(false);
             m_filterButtons[i]->setEnabled(false);
-            m_filterButtons[i]->setFixedHeight(32); // start at full height
+            m_filterButtons[i]->setFixedHeight(48);
             m_filterButtons[i]->setStyleSheet(filterBtnStyle);
 
             colLayout->addWidget(m_filterButtons[i], 0, Qt::AlignCenter);
             filtersLayout->addLayout(colLayout);
 
             connect(m_filterButtons[i], &QPushButton::toggled, [this, i](bool checked) {
-                m_filterStates[i] = checked; // true = Down (-60 dB cut), false = Up (0 dB / un-toggled)
-                // Shrink to 1/3 height only when checked
-                if (checked) {
-                    m_filterButtons[i]->setFixedHeight(11);
-                } else {
-                    m_filterButtons[i]->setFixedHeight(32);
+                m_filterStates[i] = checked;
+                if (m_filterButtons[i]) {
+                    int targetHeight = checked ? 24 : 48;
+                    m_filterButtons[i]->setFixedHeight(targetHeight);
                 }
                 updateAudioEffects();
             });
@@ -1021,7 +1014,6 @@ void MainWindow::setupUi() {
             updateAudioEffects();
         });
 
-        // Right Panel vertically stacking PITCH and FILTERS
         QVBoxLayout *rightPanelLayout = new QVBoxLayout();
         rightPanelLayout->setSpacing(6);
         rightPanelLayout->setContentsMargins(0, 0, 0, 0);
@@ -1029,11 +1021,12 @@ void MainWindow::setupUi() {
         rightPanelLayout->addWidget(m_filtersGroup, 1);
 
         controlsLayout->addWidget(m_tempoGroup, 1);
-        controlsLayout->addWidget(m_fretboardWidget, 2);
+        controlsLayout->addWidget(m_fretboardWidget, 3);
         controlsLayout->addLayout(rightPanelLayout, 1);
 
         mainLayout->addLayout(controlsLayout);
 
+        // Bottom Control Bar
         QHBoxLayout *bottomControlBar = new QHBoxLayout();
 
         m_fingeringGroup = new QGroupBox("FINGERING", this);
@@ -1124,9 +1117,9 @@ void MainWindow::setupUi() {
         bottomControlBar->addStretch();
         bottomControlBar->addWidget(m_fingeringGroup, 1);
         bottomControlBar->addSpacing(16);
-        bottomControlBar->addLayout(volumeLayout, 0);
-        bottomControlBar->addSpacing(16);
         bottomControlBar->addWidget(m_chordExtractionGroup, 1);
+        bottomControlBar->addSpacing(16);
+        bottomControlBar->addLayout(volumeLayout, 0);
         bottomControlBar->addStretch();
 
         QVBoxLayout *centerTransportLayout = new QVBoxLayout();
@@ -1172,6 +1165,10 @@ void MainWindow::setupUi() {
             m_volumeValueLabel->setText(QString("Volume: %1%").arg(val));
         });
 
+        connect(m_timelineSlider, &QSlider::valueChanged, this, &MainWindow::updateTabWindow);
+        connect(m_waveformScrollBar, &QScrollBar::valueChanged, this, &MainWindow::updateTabWindow);
+        connect(m_waveformWidget, &GLWaveformWidget::scrollOffsetChanged, this, &MainWindow::updateTabWindow);
+
         auto reanalyzeChords = [this]() {
             QString hopStr = m_hopSizeCombo->currentText();
             hopStr.remove('s');
@@ -1182,7 +1179,7 @@ void MainWindow::setupUi() {
                 double totalDurationSec = m_decodedSamples.size() / static_cast<double>(m_sampleRate);
                 if (m_statusBar) m_statusBar->showMessage("Extracting chords, please wait...");
                 m_extractedChords = analyzeAudioChords(m_decodedSamples, totalDurationSec, m_sampleRate, hopSec, fftVal);
-                if (m_statusBar && !m_statusBar->currentMessage().contains("ERROR: Could not load Vamp")) {
+                if (m_statusBar && !m_statusBar->currentMessage().contains("ERROR:")) {
                     m_statusBar->setStyleSheet("QStatusBar { background-color: #09090b; color: #f59e0b; font-family: monospace; font-size: 12px; }");
                     m_statusBar->showMessage("Ready...");
                 }
@@ -1190,10 +1187,13 @@ void MainWindow::setupUi() {
                     m_waveformWidget->setChords(m_extractedChords);
                     m_waveformWidget->setPitchShift(m_currentPitch);
                 }
+
+                if (m_tabWidget) {
+                    m_tabWidget->setChords(m_extractedChords);
+                }
             }
         };
 
-        // Keep step size and FFT size the same
         connect(m_hopSizeCombo, &QComboBox::currentIndexChanged, [this](int idx) {
             if (m_fftSizeCombo && m_fftSizeCombo->currentIndex() != idx)
                 m_fftSizeCombo->setCurrentIndex(idx);
@@ -1238,6 +1238,7 @@ void MainWindow::setupUi() {
         m_processBar->raise();
     }
 
+//////////////////////////////////////////////////////////////////////////////////////////////
 void MainWindow::resizeEvent(QResizeEvent *event) {
     QMainWindow::resizeEvent(event);
     if (m_processBar) {
@@ -1252,7 +1253,7 @@ void MainWindow::updatePosition(qint64 position) {
 
     float tempo = qMax(0.01f, m_currentSpeed);
     double playerSec = position / 1000.0;
-    double currentSec = playerSec * tempo;  // convert player time -> original waveform time
+    double currentSec = playerSec * tempo;
     double totalSec = m_decodedSamples.isEmpty() ? 0.0 : (m_decodedSamples.size() / static_cast<double>(m_sampleRate));
 
     if (m_repeatBtn->isChecked() && m_loopStartSec >= 0 && m_loopEndSec > m_loopStartSec) {
@@ -1286,6 +1287,9 @@ void MainWindow::updatePosition(qint64 position) {
             }
         }
         m_fretboardWidget->setChord(currentChord, nextChord);
+        if (m_tabWidget) {
+            m_tabWidget->setChord(currentChord);
+        }
     }
 
     int curM = static_cast<int>(currentSec) / 60;
@@ -1301,9 +1305,8 @@ void MainWindow::updatePosition(qint64 position) {
                                .arg(totS, 2, 10, QChar('0')));
     }
 
-    // Keep the info line cursor time in sync (throttled to ~10 Hz)
     if (m_infoLabel && !m_currentFileName.isEmpty()) {
-        qint64 nowMs = position; // use media position as time base
+        qint64 nowMs = position;
         if (nowMs - m_lastInfoUpdateMs >= 100 || m_lastInfoUpdateMs == 0) {
             m_lastInfoUpdateMs = nowMs;
 
@@ -1325,6 +1328,10 @@ void MainWindow::updatePosition(qint64 position) {
                                  .arg(curMs, 3, 10, QChar('0')));
         }
     }
+
+    if (m_tabWidget) {
+        m_tabWidget->setCurrentTime(currentSec);
+    }
 }
 
 void MainWindow::handleSelectionChanged(double startSec, double endSec) {
@@ -1338,6 +1345,33 @@ void MainWindow::handleSelectionChanged(double startSec, double endSec) {
         m_repeatBtn->setEnabled(false);
     }
 }
+
+void MainWindow::updateInfoLabel() {
+    if (m_infoLabel && !m_currentFileName.isEmpty()) {
+        double totalSec = m_decodedSamples.isEmpty() ? 0.0 : (m_decodedSamples.size() / static_cast<double>(m_sampleRate));
+        int curM = static_cast<int>(m_currentPositionSec) / 60;
+        int curS = static_cast<int>(m_currentPositionSec) % 60;
+        int curMs = static_cast<int>(m_currentPositionSec * 1000) % 1000;
+        int totM = static_cast<int>(totalSec) / 60;
+        int totS = static_cast<int>(totalSec) % 60;
+        int totMs = static_cast<int>(totalSec * 1000) % 1000;
+        QString chInfo = (m_channels == 1) ? "Mono" : (m_channels == 2) ? "Stereo" : QString("%1 ch").arg(m_channels);
+
+        m_infoLabel->setText(QString("%1  |  %2  |  %3 Hz  |  %4x  |  %5  |  %6:%7:%8  |  %9:%10:%11")
+                             .arg(m_currentFileName)
+                             .arg(m_formatInfo)
+                             .arg(m_sampleRate)
+                             .arg(m_currentSpeed, 0, 'f', 1)
+                             .arg(chInfo)
+                             .arg(totM, 2, 10, QChar('0'))
+                             .arg(totS, 2, 10, QChar('0'))
+                             .arg(totMs, 3, 10, QChar('0'))
+                             .arg(curM, 2, 10, QChar('0'))
+                             .arg(curS, 2, 10, QChar('0'))
+                             .arg(curMs, 3, 10, QChar('0')));
+    }
+}
+
 
 void MainWindow::onTimelineSliderChanged(int value) {
     float fraction = value / 100.0f;
@@ -1408,9 +1442,7 @@ void MainWindow::togglePlayPause() {
 }
 
 void MainWindow::stopAudio() {
-    if (m_player) {
-        m_player->stop();
-    }
+    if (m_player) m_player->stop();
     m_isPaused = false;
     m_currentPositionSec = 0.0;
     m_resumeAfterProcess = false;
@@ -1434,7 +1466,6 @@ void MainWindow::openAudioFile() {
 }
 
 void MainWindow::loadAudioFile(const QString &filePath) {
-    // Always stop playback and fully reset position before loading a new file
     stopAudio();
     m_currentPositionSec = 0.0;
     m_isPaused = false;
@@ -1442,12 +1473,8 @@ void MainWindow::loadAudioFile(const QString &filePath) {
     m_loopEndSec = -1.0;
     if (m_repeatBtn) m_repeatBtn->setEnabled(false);
 
-    if (m_waveformWidget) {
-        m_waveformWidget->setPlaybackPosition(0.0);
-    }
-    if (m_timeDisplay) {
-        m_timeDisplay->setText("00:00 / 00:00");
-    }
+    if (m_waveformWidget) m_waveformWidget->setPlaybackPosition(0.0);
+    if (m_timeDisplay) m_timeDisplay->setText("00:00 / 00:00");
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
 
@@ -1482,7 +1509,6 @@ void MainWindow::handleAudioBufferReady() {
     const QAudioFormat format = buffer.format();
     int sampleCount = buffer.sampleCount();
 
-    // Capture actual format from the first valid buffer
     if (m_decodedSamples.isEmpty()) {
         m_sampleRate = format.sampleRate() > 0 ? format.sampleRate() : 44100;
         m_channels = format.channelCount() > 0 ? format.channelCount() : 1;
@@ -1537,7 +1563,6 @@ void MainWindow::handleDecoderFinished() {
         m_waveformWidget->setPitchShift(m_currentPitch);
     }
 
-    // Update info line with full details
     if (m_infoLabel) {
         int totM = static_cast<int>(totalDurationSec) / 60;
         int totS = static_cast<int>(totalDurationSec) % 60;
@@ -1553,6 +1578,12 @@ void MainWindow::handleDecoderFinished() {
                              .arg(totS, 2, 10, QChar('0'))
                              .arg(totMs, 3, 10, QChar('0')));
     }
+
+    if (m_tabWidget) {
+        m_tabWidget->setChords(m_extractedChords);
+    }
+
+    updateTabWindow();
 
     updatePreprocessedAudio();
     QApplication::restoreOverrideCursor();
@@ -1685,9 +1716,13 @@ void MainWindow::showAboutDialog() {
     QLabel *copyLabel = new QLabel("Copyright © 2026<br><b>Ghitara.com & AIurea-Music</b>", &aboutDialog);
     copyLabel->setStyleSheet("font-size: 12px; color: #d4d4d8;");
 
+    QLabel *mcoLabel = new QLabel("<br /><br /><sub>Author: Marius Chincisan & Gemini Flash-Lite</sub>", &aboutDialog);
+    mcoLabel->setStyleSheet("font-size: 12px; color: #ffd4d8;");
+
     textLayout->addWidget(titleLabel);
     textLayout->addWidget(verLabel);
     textLayout->addWidget(copyLabel);
+    textLayout->addWidget(mcoLabel);
 
     headerLayout->addWidget(iconLabel);
     headerLayout->addSpacing(16);
@@ -1708,57 +1743,115 @@ void MainWindow::showAboutDialog() {
     aboutDialog.exec();
 }
 
-void MainWindow::saveSettings() {
-    QSettings settings("RiffTabs", "RiffTabs");
-    settings.setValue("theme/cyan", m_cyanTheme);
-    settings.setValue("fingering/power", m_fingeringToggleBtn ? m_fingeringToggleBtn->isChecked() : false);
-    settings.setValue("chords/hopSizeIndex", m_hopSizeCombo ? m_hopSizeCombo->currentIndex() : 1);
-    settings.setValue("chords/fftSizeIndex", m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 4);
-    settings.setValue("filters/enabled", m_filtersGroup ? m_filtersGroup->isChecked() : false);
-    for (int i = 0; i < 9; ++i) {
-        settings.setValue(QString("filters/band%1").arg(i), m_filterStates[i]);
-    }
-}
+    void MainWindow::saveSettings() {
+        QSettings settings("RiffTabs", "RiffTabs");
+        settings.setValue("theme/cyan", m_cyanTheme);
+        settings.setValue("fingering/power", m_fingeringToggleBtn ? m_fingeringToggleBtn->isChecked() : false);
 
+        // Save HIDE/SHOW TABS button state (assuming tabsToggleBtn is accessible or stored as a member pointer,
+        // or you can check m_tabWidget's visibility)
+        if (m_tabWidget) {
+            settings.setValue("tabs/hidden", !m_tabWidget->isVisible());
+        }
 
-void MainWindow::loadSettings() {
-    QSettings settings("RiffTabs", "RiffTabs");
-
-    bool cyan = settings.value("theme/cyan", false).toBool();
-    m_cyanTheme = cyan;
-    if (m_themeToggleBtn) {
-        m_themeToggleBtn->setChecked(cyan);
-        m_themeToggleBtn->setText(cyan ? "CYAN" : "ORANGE");
-    }
-    applyTheme(cyan);
-
-    bool power = settings.value("fingering/power", false).toBool();
-    if (m_fingeringToggleBtn) {
-        m_fingeringToggleBtn->setChecked(power);
-        m_fingeringToggleBtn->setText(power ? "Power" : "Chord");
-        if (m_fretboardWidget) m_fretboardWidget->setFingeringMode(power);
-    }
-
-    int hopIdx = settings.value("chords/hopSizeIndex", 3).toInt();
-    int fftIdx = settings.value("chords/fftSizeIndex", 3).toInt();
-    if (m_hopSizeCombo && hopIdx >= 0 && hopIdx < m_hopSizeCombo->count())
-        m_hopSizeCombo->setCurrentIndex(hopIdx);
-    if (m_fftSizeCombo && fftIdx >= 0 && fftIdx < m_fftSizeCombo->count())
-        m_fftSizeCombo->setCurrentIndex(fftIdx);
-
-    bool filtersEnabled = settings.value("filters/enabled", false).toBool();
-    if (m_filtersGroup) {
-        m_filtersGroup->setChecked(filtersEnabled);
-    }
-    for (int i = 0; i < 9; ++i) {
-        bool state = settings.value(QString("filters/band%1").arg(i), false).toBool();
-        m_filterStates[i] = state;
-        if (m_filterButtons[i]) {
-            m_filterButtons[i]->setChecked(state);
+        settings.setValue("chords/hopSizeIndex", m_hopSizeCombo ? m_hopSizeCombo->currentIndex() : 1);
+        settings.setValue("chords/fftSizeIndex", m_fftSizeCombo ? m_fftSizeCombo->currentIndex() : 4);
+        settings.setValue("filters/enabled", m_filtersGroup ? m_filtersGroup->isChecked() : false);
+        for (int i = 0; i < 9; ++i) {
+            settings.setValue(QString("filters/band%1").arg(i), m_filterStates[i]);
         }
     }
+
+    void MainWindow::loadSettings() {
+        QSettings settings("RiffTabs", "RiffTabs");
+
+        bool cyan = settings.value("theme/cyan", false).toBool();
+        m_cyanTheme = cyan;
+        if (m_themeToggleBtn) {
+            m_themeToggleBtn->setChecked(cyan);
+            m_themeToggleBtn->setText(cyan ? "CYAN" : "ORANGE");
+        }
+        applyTheme(cyan);
+
+        // Load HIDE/SHOW TABS state
+        bool tabsHidden = settings.value("tabs/hidden", false).toBool();
+        if (m_tabWidget) {
+            m_tabWidget->setVisible(!tabsHidden);
+        }
+        if (m_tabsToggleBtn) {
+            m_tabsToggleBtn->setChecked(tabsHidden);
+            m_tabsToggleBtn->setText(tabsHidden ? "SHOW" : "HIDE");
+        }
+
+        bool power = settings.value("fingering/power", false).toBool();
+        if (m_fingeringToggleBtn) {
+            m_fingeringToggleBtn->setChecked(power);
+            m_fingeringToggleBtn->setText(power ? "Power" : "Chord");
+            if (m_fretboardWidget) m_fretboardWidget->setFingeringMode(power);
+        }
+
+        int hopIdx = settings.value("chords/hopSizeIndex", 3).toInt();
+        int fftIdx = settings.value("chords/fftSizeIndex", 3).toInt();
+        if (m_hopSizeCombo && hopIdx >= 0 && hopIdx < m_hopSizeCombo->count())
+            m_hopSizeCombo->setCurrentIndex(hopIdx);
+        if (m_fftSizeCombo && fftIdx >= 0 && fftIdx < m_fftSizeCombo->count())
+            m_fftSizeCombo->setCurrentIndex(fftIdx);
+
+        bool filtersEnabled = settings.value("filters/enabled", false).toBool();
+        if (m_filtersGroup) {
+            m_filtersGroup->setChecked(filtersEnabled);
+        }
+        for (int i = 0; i < 9; ++i) {
+            bool state = settings.value(QString("filters/band%1").arg(i), false).toBool();
+            m_filterStates[i] = state;
+            if (m_filterButtons[i]) {
+                m_filterButtons[i]->setChecked(state);
+            }
+        }
+    }
+
+QVector<QString> MainWindow::getActiveShape(const QString &chord)
+{
+    if(m_fretboardWidget)
+        return m_fretboardWidget->getActiveShape(chord);
+    return QVector<QString>();
 }
 
+void MainWindow::updateTabWindow()
+{
+    if (!m_waveformWidget || !m_tabWidget) return;
+    double totalSec = m_waveformWidget->getDuration();
+    if (totalSec <= 0) return;
+
+    int sliderVal = m_timelineSlider ? m_timelineSlider->value() : 100;
+    if (sliderVal >= 100) {
+        m_tabWidget->setTimeWindow(0.0, totalSec, true);
+    } else {
+        float visibleFraction = m_waveformWidget->getVisibleFraction();
+        int scrollOffset = m_waveformWidget->getScrollOffset();
+        int widgetWidth = m_waveformWidget->width();
+        int totalWidth = m_waveformWidget->getTotalWidth();
+
+        if (totalWidth <= 0) totalWidth = widgetWidth;
+
+        double windowStart = (static_cast<double>(scrollOffset) / totalWidth) * totalSec;
+        double viewDuration = totalSec * visibleFraction;
+        double windowEnd = windowStart + viewDuration;
+
+        m_tabWidget->setTimeWindow(windowStart, windowEnd, false);
+    }
+}
+
+void MainWindow::showEvent(QShowEvent *event) {
+    QMainWindow::showEvent(event);
+
+    static bool initialized = false;
+    if (!initialized) {
+        initialized = true;
+        // Call updateTabWindow after the window is shown and painted
+        // updateTabWindow();
+    }
+}
 void MainWindow::closeEvent(QCloseEvent *event) {
     saveSettings();
     QMainWindow::closeEvent(event);

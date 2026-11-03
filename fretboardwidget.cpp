@@ -125,37 +125,32 @@ QVector<QString> FretboardWidget::getActiveShape(const QString &chord) {
 void FretboardWidget::drawFretboard(QPainter &painter, const QRect &bounds, const QString &chordName, bool isMini) {
     QVector<QString> shape = getActiveShape(chordName);
 
-    int numFrets = 6;
+    int numFrets = 8; // Increased from 6 to 8 frets
     int startX = bounds.left() + (isMini ? 15 : 40);
     int endX = bounds.right() - (isMini ? 15 : 40);
     int fretW = (endX - startX) / numFrets;
 
-    int topY = bounds.top() + (isMini ? 15 : 24); // Adjusted top margin for main label
+    int topY = bounds.top() + (isMini ? 15 : 24);
     int bottomY = bounds.bottom() - (isMini ? 20 : 25);
     int stringSpacing = (bottomY - topY) / 5;
 
     if (isMini) {
-        // Draw Mini Preview Frame
         painter.setBrush(QColor(18, 18, 22));
         painter.setPen(QPen(QColor(161, 161, 170), 1));
         painter.drawRoundedRect(bounds, 6, 6);
 
-        // Mini Header Title (Preserve exact chord casing)
         painter.setFont(QFont("Monospace", 8, QFont::Bold));
         painter.setPen(m_accentColor);
         painter.drawText(bounds.adjusted(6, 2, -6, 0), Qt::AlignTop | Qt::AlignLeft, "NEXT: " + chordName);
     } else {
-        // ========================================================
-        // BOLD CURRENT CHORD NAME ABOVE MAIN FRETBOARD
-        // ========================================================
         painter.setFont(QFont("Monospace", 14, QFont::Bold));
-        painter.setPen(m_accentColor); // Amber Highlight Color
+        painter.setPen(m_accentColor);
 
         QString chordTitle = chordName.isEmpty() ? "CHORD: --" : "CHORD: " + chordName;
         painter.drawText(QRect(startX, bounds.top() - 2, endX - startX, 22), Qt::AlignLeft | Qt::AlignVCenter, chordTitle);
     }
 
-    // Draw Vertical Frets and Fret Numbers
+    // Draw Vertical Frets and Fret Numbers (1 to 8)
     painter.setFont(QFont("Monospace", isMini ? 7 : 10, QFont::Bold));
     for (int f = 0; f <= numFrets; ++f) {
         int fx = startX + (f * fretW);
@@ -189,6 +184,7 @@ void FretboardWidget::drawFretboard(QPainter &painter, const QRect &bounds, cons
         }
     }
 }
+
 
 void FretboardWidget::paintEvent(QPaintEvent *) {
     QPainter painter(this);
