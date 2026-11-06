@@ -27,6 +27,9 @@
 #include <QDialogButtonBox>
 #include <QPainterPath>
 #include <QPainter>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QTimer>
 #if _WIN32
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
@@ -87,16 +90,20 @@ QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &sample
     Plugin *plugin = loader->loadPlugin(key, sampleRate, PluginLoader::ADAPT_ALL);
 
     if (!plugin) {
+ #if _WIN32
         size_t errCode = GetLastError();
 
         qDebug() << "Windows LoadLibrary failed with error code:" << errCode;
+#endif
         qDebug() << "Failed to load plugin with key:" << QString::fromStdString(key);
         // Try fallback key
         key = loader->composePluginKey("vamp-chordino", "chordino");
         plugin = loader->loadPlugin(key, sampleRate, PluginLoader::ADAPT_ALL);
         if (!plugin) {
+ #if _WIN32
             errCode = GetLastError();
             qDebug() << "Windows LoadLibrary failed with error code:" << errCode;
+#endif
             qDebug() << "Fallback plugin key also failed. Check if nnls-chroma.dll is in VAMP_PATH and matches x64 architecture.";
         }
     }
@@ -1231,7 +1238,6 @@ void MainWindow::setupMenuBar() {
 
         connect(m_hopSizeCombo, &QComboBox::currentIndexChanged, reanalyzeChords);
         connect(m_fftSizeCombo, &QComboBox::currentIndexChanged, reanalyzeChords);
-
         m_statusBar = new QStatusBar(this);
         m_statusBar->setStyleSheet("QStatusBar { background-color: #09090b; color: #f59e0b; font-family: monospace; font-size: 12px; }");
         m_statusBar->showMessage("Ready...");
@@ -1248,6 +1254,38 @@ void MainWindow::setupMenuBar() {
             m_cyanTheme = checked;
             m_themeToggleBtn->setText(checked ? "CYAN" : "ORANGE");
             applyTheme(checked);
+        });
+
+        // "Buy a coffee" button (bright red) – blinks until pressed once
+        QPushButton *buyCoffeeBtn = new QPushButton("Buy a coffee", this);
+        buyCoffeeBtn->setFixedHeight(22);
+
+        const QString coffeeStyleOn =
+            "QPushButton { background-color: #ef4444; color: #ffffff; border: none; border-radius: 4px; "
+            "font-weight: bold; font-size: 10px; padding: 0 10px; }"
+            "QPushButton:hover { background-color: #dc2626; color: #ffffff; }"
+            "QPushButton:pressed { background-color: #b91c1c; color: #ffffff; }";
+        const QString coffeeStyleOff =
+            "QPushButton { background-color: #7f1d1d; color: #fca5a5; border: none; border-radius: 4px; "
+            "font-weight: bold; font-size: 10px; padding: 0 10px; }"
+            "QPushButton:hover { background-color: #dc2626; color: #ffffff; }"
+            "QPushButton:pressed { background-color: #b91c1c; color: #ffffff; }";
+
+        buyCoffeeBtn->setStyleSheet(coffeeStyleOn);
+        m_statusBar->addPermanentWidget(buyCoffeeBtn);
+
+        QTimer *blinkTimer = new QTimer(buyCoffeeBtn);
+        bool *blinkState = new bool(true);
+        connect(blinkTimer, &QTimer::timeout, buyCoffeeBtn, [buyCoffeeBtn, coffeeStyleOn, coffeeStyleOff, blinkState]() {
+            *blinkState = !(*blinkState);
+            buyCoffeeBtn->setStyleSheet(*blinkState ? coffeeStyleOn : coffeeStyleOff);
+        });
+        blinkTimer->start(500); // blink every 500 ms
+
+        connect(buyCoffeeBtn, &QPushButton::clicked, this, [buyCoffeeBtn, blinkTimer, coffeeStyleOn]() {
+            blinkTimer->stop();
+            buyCoffeeBtn->setStyleSheet(coffeeStyleOn); // solid bright red after click
+            QDesktopServices::openUrl(QUrl("https://www.paypal.com/ncp/payment/UY6RJK9AQ6HVC"));
         });
 
         setStatusBar(m_statusBar);

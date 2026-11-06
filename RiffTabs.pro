@@ -37,7 +37,7 @@ HEADERS += \
     knobwidget.h \
     tabwidget.h
 
-#
+# LINUX
 # sudo apt update
 # sudo apt install -y build-essential cmake pkg-config git \
 #                     libfftw3-dev libyaml-cpp-dev libtag1-dev \
@@ -103,13 +103,13 @@ win32 {
 
 
 # Copy the binary to ./bin after a successful build
-DESTDIR = $$PWD/bin
 
 unix:!macx {
-    QMAKE_POST_LINK += mkdir -p $$DESTDIR && cp -f $$OUT_PWD/$$TARGET $$DESTDIR/
+    DESTDIR = $$PWD/bin
 }
 
 win32 {
+    DESTDIR = $$PWD/wbin
     QMAKE_POST_LINK += $$quote(if not exist $$shell_path($$DESTDIR) mkdir $$shell_path($$DESTDIR) && copy /Y $$shell_path($$OUT_PWD/$$TARGET.exe) $$shell_path($$DESTDIR/))
 }
 

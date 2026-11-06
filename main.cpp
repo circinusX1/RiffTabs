@@ -11,8 +11,6 @@
 #include <QCoreApplication>
 #include <QDir>
 
-
-#pragma once
 #include <iostream>
 #include <sstream>
 #include <streambuf>
