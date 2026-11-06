@@ -27,9 +27,18 @@
 #include <QDialogButtonBox>
 #include <QPainterPath>
 #include <QPainter>
+#if _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
 #include <vamp-hostsdk/PluginLoader.h>
 #include <vamp-hostsdk/Plugin.h>
 #include <vamp-hostsdk/RealTime.h>
+#else
+#include <vamp-hostsdk/PluginLoader.h>
+#include <vamp-hostsdk/Plugin.h>
+#include <vamp-hostsdk/RealTime.h>
+#endif
 
 using namespace Vamp::HostExt;
 
@@ -69,15 +78,27 @@ QVector<ChordMarker> MainWindow::analyzeAudioChords(const QVector<float> &sample
 
     using namespace Vamp;
     using namespace Vamp::HostExt;
+    qDebug() << "-------------------------------------";
+    qDebug() << "Current VAMP_PATH:" << qgetenv("VAMP_PATH");
+    qDebug() << "Current VAMP_DEBUG:" << qgetenv("VAMP_DEBUG");
 
     PluginLoader *loader = PluginLoader::getInstance();
-
     PluginLoader::PluginKey key = loader->composePluginKey("nnls-chroma", "chordino");
     Plugin *plugin = loader->loadPlugin(key, sampleRate, PluginLoader::ADAPT_ALL);
 
     if (!plugin) {
+        size_t errCode = GetLastError();
+
+        qDebug() << "Windows LoadLibrary failed with error code:" << errCode;
+        qDebug() << "Failed to load plugin with key:" << QString::fromStdString(key);
+        // Try fallback key
         key = loader->composePluginKey("vamp-chordino", "chordino");
         plugin = loader->loadPlugin(key, sampleRate, PluginLoader::ADAPT_ALL);
+        if (!plugin) {
+            errCode = GetLastError();
+            qDebug() << "Windows LoadLibrary failed with error code:" << errCode;
+            qDebug() << "Fallback plugin key also failed. Check if nnls-chroma.dll is in VAMP_PATH and matches x64 architecture.";
+        }
     }
 
     if (!plugin) {
@@ -674,7 +695,12 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     m_player->setAudioOutput(m_audioOutput);
 
     setupMenuBar();
+#if _WIN32
+   std::this_thread::sleep_for(std::chrono::milliseconds(500));
+#endif
     setupUi();
+#if _WIN32
+#endif
     MainWindow::Pmain = this;
     setWindowIcon(createAppIcon());
 

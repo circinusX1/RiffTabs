@@ -3,10 +3,72 @@
 #include <QApplication>
 #include <QStyleFactory>
 #include <QDir>
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
+#include <streambuf>
 #include <QDebug>
 #include <QCoreApplication>
 #include <QDir>
-#include <cstdlib>
+
+
+#pragma once
+#include <iostream>
+#include <sstream>
+#include <streambuf>
+#include <QDebug>
+
+class QDebugStream : public std::streambuf {
+public:
+    QDebugStream(std::ostream &stream) : m_stream(stream) {
+        // Save the old buffer and redirect the stream to this instance
+        m_old_buf = m_stream.rdbuf(this);
+    }
+
+    ~QDebugStream() {
+        // Restore the original buffer upon destruction
+        m_stream.rdbuf(m_old_buf);
+    }
+
+protected:
+    // This function is called when characters are written to the stream
+    virtual int_type overflow(int_type v) override {
+        if (v == traits_type::eof()) {
+            return traits_type::not_eof(v);
+        }
+
+        if (v == '\n') {
+            // Found a newline, flush the accumulated line to qDebug
+            qDebug().noquote() << QString::fromStdString(m_buffer);
+            m_buffer.clear();
+        } else {
+            m_buffer.push_back(v);
+        }
+        return v;
+    }
+
+    // Handles bulk block transfers (e.g., std::endl or large strings)
+    virtual std::streamsize xsputn(const char *p, std::streamsize n) override {
+        std::string str(p, n);
+        size_t pos = 0;
+
+        while ((pos = str.find('\n')) != std::string::npos) {
+            m_buffer.append(str.substr(0, pos));
+            qDebug().noquote() << QString::fromStdString(m_buffer);
+            m_buffer.clear();
+            str.erase(0, pos + 1);
+        }
+
+        m_buffer.append(str);
+        return n;
+    }
+
+private:
+    std::ostream &m_stream;
+    std::streambuf *m_old_buf;
+    std::string m_buffer;
+};
+
 
 // Call this once at startup, before any chord analysis
 static void setupVampPluginPath()
@@ -39,6 +101,7 @@ static void setupVampPluginPath()
 int main(int argc, char *argv[]) {
     QApplication app(argc, argv);
 
+    QDebugStream redirectCerr(std::cerr);
     app.setApplicationVersion(APP_VERSION);
     // Set VAMP_PATH so Chordino / nnls-chroma plugins are found next to the binary
     setupVampPluginPath();

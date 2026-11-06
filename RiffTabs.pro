@@ -17,6 +17,12 @@ CONFIG += c++17
 TARGET = RiffTabs
 TEMPLATE = app
 
+
+win32 {
+    INCLUDEPATH += C:/vcpkg/installed/x64-windows-static/include
+    INCLUDEPATH += $$PWD/../vamp-plugin-sdk
+}
+
 SOURCES += \
     main.cpp \
     mainwindow.cpp \
@@ -38,23 +44,7 @@ HEADERS += \
 #                     libsamplerate0-dev libavcodec-dev libavformat-dev \
 #                     python3 python3-pip  libeigen3-dev
 # sudo apt update
-#  sudo apt install libsoundtouch-dev
-#   for: essentia.h
-# 1. Clean previous build artifacts
-#   python3 waf clean
-#
-#   # 2. Configure while ignoring FFmpeg-dependent AudioLoader algorithms
-#   python3 waf configure --mode=release --ignore-algos=AudioLoader,MonoLoader
-#
-#   # 3. Build Essentia
-#   python3 waf
-#
-#   # 4. Install system-wide
-#   sudo python3 waf install
-#   sudo apt install -y libeigen3-dev
-#
-#   sudo apt update
-#   sudo apt install -y libsoundtouch-dev
+# sudo apt install -y libsoundtouch-dev
 #
 
 unix:!macx {
@@ -69,14 +59,38 @@ unix:!macx {
 }
 
 win32 {
-    # Windows (vcpkg)
-    INCLUDEPATH += C:/vcpkg/installed/x64-windows/include \
-                   C:/vcpkg/installed/x64-windows/include/eigen3
-    INCLUDEPATH += C:/vcpkg/installed/x64-windows/include/soundtouch
+    VCPKG = C:/vcpkg/installed/x64-windows-static-md
+    VAMPLIB = $$PWD/../vamp-plugin-sdk
 
-    LIBS += -LC:/vcpkg/installed/x64-windows/lib \
-            --lSoundTouch -lfftw3f-3 -lyaml-cpp
-            #dpkg -L libsoundtouch-dev | grep -E '\.so|\.a'
+    INCLUDEPATH += $$VCPKG/include
+
+    CONFIG(debug, debug|release) {
+        VCPKG_LIB = $$VCPKG/debug/lib
+    } else {
+        VCPKG_LIB = $$VCPKG/lib
+    }
+
+    LIBS += \
+        $$VCPKG_LIB/SoundTouch.lib \
+        $$VCPKG_LIB/fftw3f.lib
+
+
+    CONFIG(debug, debug|release) {
+        message("Configuring for Windows DEBUG build")
+        LIBS += \
+            $$VCPKG_LIB/yaml-cppd.lib \
+            $$VAMPLIB/build/Desktop_x86_windows_msvc2026_pe_64bit_Debug/vamp-hostsdk.lib
+            $$VAMPLIB/build/Desktop_x86_windows_msvc2026_pe_64bit_Release/vamp-sdk.lib
+    }
+    else{
+        message("Configuring for Windows RELEASE build")
+        LIBS += \
+            $$VCPKG_LIB/yaml-cpp.lib \
+            $$VAMPLIB/build/Desktop_x86_windows_msvc2026_pe_64bit_Release/vamp-hostsdk.lib
+            $$VAMPLIB/build/Desktop_x86_windows_msvc2026_pe_64bit_Release/vamp-sdk.lib
+    }
+    # LIBS += -LC:/vcpkg/installed/x64-windows-static/lib -lvamp-sdk
+
 }
 
 # WINDOWS
@@ -89,14 +103,14 @@ win32 {
 
 
 # Copy the binary to ./bin after a successful build
-BINDIR = $$PWD/bin
+DESTDIR = $$PWD/bin
 
 unix:!macx {
-    QMAKE_POST_LINK += mkdir -p $$BINDIR && cp -f $$OUT_PWD/$$TARGET $$BINDIR/
+    QMAKE_POST_LINK += mkdir -p $$DESTDIR && cp -f $$OUT_PWD/$$TARGET $$DESTDIR/
 }
 
 win32 {
-    QMAKE_POST_LINK += $$quote(if not exist $$shell_path($$BINDIR) mkdir $$shell_path($$BINDIR) && copy /Y $$shell_path($$OUT_PWD/$$TARGET.exe) $$shell_path($$BINDIR/))
+    QMAKE_POST_LINK += $$quote(if not exist $$shell_path($$DESTDIR) mkdir $$shell_path($$DESTDIR) && copy /Y $$shell_path($$OUT_PWD/$$TARGET.exe) $$shell_path($$DESTDIR/))
 }
 
 DISTFILES += \
